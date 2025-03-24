@@ -1,0 +1,19 @@
+{
+  "name": "jetbrains-in-editor-js-eval",
+  "version": "1.0.0",
+  "description": "#13",
+  "type": "module",
+  "main": "sand/vm.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "acorn": "^8.14.1",
+    "acorn-walk": "^8.3.4"
+  },
+  "engines": {
+    "node": "23"
+  }
+}
