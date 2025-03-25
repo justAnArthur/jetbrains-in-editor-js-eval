@@ -50,6 +50,7 @@ For proof of concept, I have simplified a few things:
 - The code is not fully optimized
 - The code is not fully tested
   - I have tested only a few cases, there is in examples file
+- I have used experimental node.js modules for easy handling esm imports
 
 ### Examples
 
@@ -105,6 +106,17 @@ function double(x) {
 >a = 1
 >#38 // sum(a, b)
 5
+```
+
+```terminal
+...
+>.load
+Enter the file path: examples/with-imports.example.js
+File was loaded: examples/with-imports.example.js
+  import { bar, foo } from './with-imports.utils.example.js'
+...
+>j // let j = double(foo) + triple(bar)
+80
 ```
 
 ## Task 01
