@@ -49,12 +49,12 @@ function promptUser() {
 
           const executableCode = depsCode.filter(Boolean).join('\n') + '\n' + inputCode
 
-          //console.log('$', { executableCode })
 
           const context = vm.createContext({ print: console.log })
 
           // console.log('$', { executableCode })
           console.time("ast")
+          console.log(executableCode)
           const sourceTextModule = new vm.SourceTextModule(executableCode, { context })
           await sourceTextModule.link((specifier, referencingModule) => {
             return new vm.SourceTextModule(fs.readFileSync(specifier, 'utf-8'), { context: referencingModule.context })
