@@ -1,6 +1,4 @@
-import { bar, foo } from './example.utils.js'
-
-const _x = 2
+import { bar, foo } from './with-imports.utils.example.js'
 
 function double(x) {
   return x * 2

@@ -1,99 +1,36 @@
-import fs from 'fs'
-import readline from 'readline'
+import fs from "node:fs/promises"
+import vm from "node:vm"
+import readline from "readline"
+
 import { parse } from "acorn"
 import { base, recursive } from "acorn-walk"
-import vm from "node:vm"
+import path from "node:path"
 
-const filePath = 'example.hard.js'
-const fileContent = fs.readFileSync(filePath, 'utf-8')
-const fileLines = fileContent.split(/\r?\n/)
-//console.log('$', { fileLines })
+console.assert(process.version.startsWith('v23'), 'Node.js version must be v23')
+console.assert((process.execArgv || '').includes('--experimental-vm-modules'), 'The --experimental-vm-modules flag must be enabled')
 
-// # ---
+// ---
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-})
+const codeStack = new Set()
 
-function promptUser() {
-  rl.question('Enter input: \n', async (input) => {
-    switch (input.toLowerCase()) {
-      case 'exit':
-        rl.close()
-        break
-
-      default:
-        let lineNumber, code
-        if (/^#(\d+)$/.test(input)) {
-          lineNumber = parseInt(input.slice(1), 10)
-
-          //console.log('$', { lineNumber })
-
-          if (lineNumber < 1 || lineNumber > fileLines.length) {
-            //console.log(`Invalid line number: ${lineNumber}`)
-            promptUser()
-            return
-          }
-        } else
-          code = input
-
-        try {
-          let inputCode = !lineNumber ? code : fileLines[lineNumber - 1]
-          const inputCodeAst = parse(inputCode, { ecmaVersion: "latest", sourceType: "script" })
-
-          if (inputCodeAst.body[0].type === "ExpressionStatement")
-            inputCode = `print(${inputCode})`
-
-          const depsCode = getLinesOfDepsOfCode(code, lineNumber)
-
-          const executableCode = depsCode.filter(Boolean).join('\n') + '\n' + inputCode
-
-
-          const context = vm.createContext({ print: console.log })
-
-          // console.log('$', { executableCode })
-          console.time("ast")
-          console.log(executableCode)
-          const sourceTextModule = new vm.SourceTextModule(executableCode, { context })
-          await sourceTextModule.link((specifier, referencingModule) => {
-            return new vm.SourceTextModule(fs.readFileSync(specifier, 'utf-8'), { context: referencingModule.context })
-          })
-          await sourceTextModule.evaluate()
-          console.timeEnd("ast")
-
-          const plainCode = fileLines.join('\n') + '\n' + inputCode
-          // console.log('$', { plainCode })
-          console.time("plain")
-          const _sourceTextModule = new vm.SourceTextModule(plainCode, { context })
-          await _sourceTextModule.link((specifier, referencingModule) => {
-            return new vm.SourceTextModule(fs.readFileSync(specifier, 'utf-8'), { context: referencingModule.context })
-          })
-          await _sourceTextModule.evaluate()
-          console.timeEnd("plain")
-
-          if (!lineNumber)
-            fileLines.push(input)
-        } catch (e) {
-          console.error(e)
-        }
-
-        promptUser()
-    }
-  })
+async function loadRelativeFile(filePath) {
+  return fs.readFile(filePath, 'utf-8')
 }
 
-promptUser()
+// ---
 
-function getLinesOfDepsOfCode(code, lineNumber, { ignoredDeps = [] } = {}) {
+const context = vm.createContext({ print: console.log })
+
+/**
+ * Get the lines of code that are dependencies of the input code
+ */
+function getLinesOfDepsCode(inputCode, inputLineNumber, codeLines, { ignoredDeps = [] } = {}) {
   const deps = []
 
-  if (!code && lineNumber)
-    code = fileLines[lineNumber - 1]
+  if (!inputCode && inputLineNumber)
+    inputCode = codeLines[inputLineNumber - 1]
 
-  //console.log('$', { code })
-
-  const ast = parse(code, { ecmaVersion: "latest", sourceType: "script" })
+  const ast = parse(inputCode, { ecmaVersion: "latest", sourceType: "script" })
 
   const visitors = {
     Program(node, state, c) {
@@ -120,18 +57,14 @@ function getLinesOfDepsOfCode(code, lineNumber, { ignoredDeps = [] } = {}) {
   }
   recursive(ast, null, visitors, base)
 
-  //console.log('$', { deps })
-
   let depsCode = []
 
   for (const dep of deps) {
     if (ignoredDeps.includes(dep))
       continue
 
-    //console.log('$', { dep })
-
-    for (let i = (lineNumber || fileLines.length) - 1; i >= 0; i--) {
-      let code = fileLines[i]
+    for (let i = (inputLineNumber || codeLines.length) - 1; i >= 0; i--) {
+      let codeLine = codeLines[i]
 
       let isDeclaration = false
 
@@ -140,22 +73,20 @@ function getLinesOfDepsOfCode(code, lineNumber, { ignoredDeps = [] } = {}) {
       let isRelevant = false
       let _endFunctionIndex
 
-      if (code.includes('}') && !code.includes('import')) {
+      console.debug('dep:', dep, 'i:', i, 'codeLine:', codeLine)
+
+      if (codeLine.includes('}') && !codeLine.includes('import')) {
         let inner = 0
         _endFunctionIndex = i
         while (i >= 0) {
-          //console.log('$', { i }, { code })
-
-          if (fileLines[i].includes('{')) {
+          if (codeLines[i].includes('{'))
             inner -= 1
-          }
 
-          if (fileLines[i].includes('}')) {
+          if (codeLines[i].includes('}'))
             inner += 1
-          }
 
           if (inner === 0) {
-            code = fileLines.slice(i, _endFunctionIndex + 1).join('\n')
+            codeLine = codeLines.slice(i, _endFunctionIndex + 1).join('\n')
             break
           }
 
@@ -163,16 +94,12 @@ function getLinesOfDepsOfCode(code, lineNumber, { ignoredDeps = [] } = {}) {
         }
       }
 
-      //console.log('$', { i }, { code })
-
-      const ast = parse(code, { ecmaVersion: "latest", sourceType: "module" })
+      const ast = parse(codeLine, { ecmaVersion: "latest", sourceType: "module" })
 
       const visitors = {
         VariableDeclaration(node, state, c) {
-          //console.log('$', 'variable declaration', { code }, node.declarations)
           for (const decl of node.declarations) {
             if (decl.id.name === dep) {
-              // //console.log('$==', decl.id.name, dep)
               isDeclaration = true
               isRelevant = true
               break
@@ -181,23 +108,19 @@ function getLinesOfDepsOfCode(code, lineNumber, { ignoredDeps = [] } = {}) {
         },
         AssignmentExpression(node) {
           if (node.left.name === dep) {
-            // //console.log('$==', node.left.name, dep)
             isRelevant = true
           }
         },
         UpdateExpression(node) {
           if (node.argument.name === dep) {
-            // //console.log('$==', node.argument.name, dep)
             isRelevant = true
           }
         },
         FunctionDeclaration(node) {
           if (node.id.name === dep) {
-            // //console.log('$==', node.id.name, dep)
-// Ignore function parameters
             for (const param of node.params) {
               if (param.type === "Identifier") {
-                ignoredDeps.push(node)
+                ignoredDeps.push(param.name)
               }
             }
             isRelevant = true
@@ -206,7 +129,6 @@ function getLinesOfDepsOfCode(code, lineNumber, { ignoredDeps = [] } = {}) {
         ImportDeclaration(node) {
           for (const specifier of node.specifiers) {
             if (specifier.local.name === dep) {
-              // //console.log('$==', specifier.local.name, dep)
               isRelevant = true
               isImport = true
             }
@@ -218,20 +140,19 @@ function getLinesOfDepsOfCode(code, lineNumber, { ignoredDeps = [] } = {}) {
       if (!isRelevant)
         continue
 
-      depsCode[i] = code
-      let _code = code
+      depsCode[i] = codeLine
+      let _code = codeLine
 
       if (_endFunctionIndex !== undefined) {
-        _code = fileLines.slice(i + 2, _endFunctionIndex).join('\n')
+        _code = codeLines.slice(i + 1, _endFunctionIndex).join('\n')
         _code = _code.replace('return ', '')
-        //console.log('$', { dep, _code })
       }
 
       if (isImport)
         continue
 
       const _i = i
-      const innerDepsCode = getLinesOfDepsOfCode(_code, _i, { ignoredDeps: [dep, ...ignoredDeps] })
+      const innerDepsCode = getLinesOfDepsCode(_code, _i, codeLines, { ignoredDeps: [dep, ...ignoredDeps] })
 
       for (let j = 0; j < innerDepsCode.length; j++) {
         if (innerDepsCode[j])
@@ -247,3 +168,158 @@ function getLinesOfDepsOfCode(code, lineNumber, { ignoredDeps = [] } = {}) {
 
   return depsCode
 }
+
+/**
+ * Handle the input code to get the print statement.
+ * If the input code is an expression, wrap it in a print statement.
+ */
+function handleInputToGetPrint(inputCode) {
+  const inputCodeAst = parse(inputCode, { ecmaVersion: "latest", sourceType: "script" })
+
+  if (inputCodeAst.body[0]?.type === "ExpressionStatement")
+    inputCode = `print(${inputCode})`
+
+  return inputCode
+}
+
+// ---
+
+const helpText =
+  `.help - display this help message
+.exit - exit the program
+.clear - clear the console
+.stack - display the current code stack
+.debug - toggle debug mode
+.load - load a file
+#<number> - execute the code at the line number
+
+anything else - execute the code
+examples:
+- 1 + 1
+- #32
+- const a = 1 ;> a + b`
+
+const readLineInterface = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+})
+
+let isDebugMode = false
+console.debug = (...args) => isDebugMode && console.log(...args)
+
+/**
+ * The main loop for reading input from the user
+ */
+function readLineLoop() {
+  readLineInterface
+    .question('> ', async (input) => {
+      try {
+        switch (input.toLowerCase().trim()) {
+          case '.help':
+            console.log(helpText)
+            readLineLoop()
+            break
+
+          case '.exit':
+            readLineInterface.close()
+            process.exit()
+            break
+
+          case '.clear':
+            console.clear()
+            readLineLoop()
+            break
+
+          case '.stack':
+            let j = 0, i = 0
+            codeStack.forEach((code) => {
+              console.log(`#${++i}`)
+              code.split('\n').forEach((line) => {
+                console.log(`${++j} | ${line}`)
+              })
+              console.log('\n')
+            })
+            readLineLoop()
+            break
+
+          case '.debug':
+            isDebugMode = !isDebugMode
+            console.log(`debug mode is now ${isDebugMode ? 'on' : 'off'}`)
+            readLineLoop()
+            break
+
+          case '.load':
+            readLineInterface.question('Enter the file path: ', async (filePath) => {
+              try {
+                const file = await loadRelativeFile(filePath)
+
+                codeStack.add(file)
+
+                console.log(`File was loaded: ${filePath}\n`, file.split('\n').slice(0, 5).join('\n'), '\n...\n')
+              } catch (e) {
+                console.error('Error loading file:', e)
+              } finally {
+                readLineLoop()
+              }
+            })
+            break
+
+          default:
+            const combinedStackCodeLines = [...codeStack.entries()]
+              .flatMap(([i, code]) => code.split('\n'))
+
+            let lineNumber, inputCode
+            if (/^#(\d+)$/.test(input)) {
+              lineNumber = parseInt(input.slice(1).trim(), 10) - 1
+
+              if (lineNumber < 0 || lineNumber > combinedStackCodeLines.length - 1) {
+                console.log(`Invalid line number: ${lineNumber + 1}`)
+                readLineLoop()
+                return
+              }
+
+              console.debug('combinedStackCodeLines:\n', combinedStackCodeLines, '\n', 'lineNumber:', lineNumber + 1, '\n')
+              inputCode = combinedStackCodeLines[lineNumber]
+            } else {
+              inputCode = input
+            }
+
+            inputCode = inputCode.trim()
+
+            if (inputCode.length < 1) {
+              console.log('No input code was provided')
+              readLineLoop()
+              return
+            }
+
+            console.debug('inputCode:\n', inputCode, '\n', 'lineNumber:', lineNumber, '\n')
+
+            const depsCodeLines = getLinesOfDepsCode(inputCode, /*lineNumber*/ undefined, combinedStackCodeLines)
+              .filter(Boolean)
+
+            const handledInputCode = handleInputToGetPrint(inputCode)
+
+            console.debug('depsCodeLines:\n', depsCodeLines, '\n')
+
+            const executableCode = depsCodeLines.join('\n') + '\n' + handledInputCode
+
+            const sourceTextModule = new vm.SourceTextModule(executableCode, { context })
+            await sourceTextModule.link(async (specifier, referencingModule) =>
+              new vm.SourceTextModule(await loadRelativeFile(path.join('examples', specifier)), { context: referencingModule.context }))
+            await sourceTextModule.evaluate()
+
+            codeStack.add(inputCode)
+
+            readLineLoop()
+            break
+        }
+      } catch (e) {
+        console.error('there was an error:', e)
+        readLineLoop()
+      }
+    })
+}
+
+readLineLoop()
+
+export { readLineLoop, getLinesOfDepsCode }
