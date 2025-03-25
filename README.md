@@ -6,9 +6,9 @@
 
 I developed a solution to execute only the specific code necessary for obtaining a particular result, significantly
 enhancing efficiency. For example, if we simply require the result of `a + b`, there's no need to evaluate the entire
-script. Using JavaScript AST parsing via the acorn library, my approach analyzes the user's input—either specific line
-numbers or custom selections—intelligently identifying and extracting only the essential variables, functions, and
-dependencies. These relevant elements are then combined and executed, ensuring a targeted and efficient code evaluation
+script. Using JavaScript AST parsing via the acorn library, my approach analyzes the user's input — either specific line
+numbers or custom input — identifying and extracting only the essential variables, functions, dependencies. These
+relevant elements are then combined and executed, ensuring a targeted and efficient code evaluation
 process.
 
 The current implementation is a proof of concept, and in general simple cases the performance (time and memory) of
@@ -111,12 +111,12 @@ function double(x) {
 
 ### Background
 
-- I have written more than 100,000 lines of JavaScript and TypeScript, working extensively with frameworks and libraries
-  such as Next.js, React.js, Node.js, and Bun.js. And also I have solid experience with optimizing things to gain
-  maximum performance with JavaScript. Even rewriting several things to C and running them with Node.js.
-- Experience creating several applications using this tech stack.
-- I have also developed custom libraries and plugins. For example, my most recent project allowed our team to build
-  forms with complex validations entirely from extended Yup.js schemas typed with Java classes.
+- I have written more than 100,000 lines of JavaScript and TypeScript in trying to gain maximum in optimizing things.
+  - Even rewriting several things to C and running them with Node.js.
+- Experience in creating several production applications with JavaScript, TypeScript and Java.
+- I have also developed custom libraries and plugins.
+  - For example, my most recent project allowed our team to build forms with complex validations entirely from extended
+    Yup.js schemas typed with Java classes.
 
 ### Thoughts
 
