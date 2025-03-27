@@ -24,6 +24,64 @@ node --experimental-vm-modules solution.js  # !!! add experimental-modules flag
 npm run start
 ```
 
+### Main Point
+
+With next code and that request (`> e + h`)
+
+<div style="display:flex">
+<div style="flex:50%">
+
+The code
+
+```javascript
+function double(x) {
+  return x * 3
+}
+
+let a = 1
+let b = 2
+let c = a + b
+let d = 10
+d + 20
+const e = double(c)
+double(e)
+let f = 2 - 412
+f * 2
+let g = "Hello"
+g + " World!"
+let h
+h = 25
+```
+
+</div>
+<div style="flex:50%">
+
+The code is executes
+
+```javascript
+function double(x) {
+  return x * 3
+}
+
+
+
+
+
+
+const e = double(c)
+
+
+
+
+
+let h
+h = 25
+```
+  
+</div>
+</div>
+
+
 ### Features
 
 - Esm imports support
